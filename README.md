@@ -1,6 +1,10 @@
 # mriya
 a scrolling x11 window manager.
 
+<p align="center">
+  <img src="assets/an225_000.png" alt="Alt text" width="700">
+</p>
+
 # what is it?
 
 mriya is a scrolling x11 window-manager inspired by niri, i3wm and plan9's rio. 
