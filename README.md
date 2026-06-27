@@ -57,8 +57,8 @@ cc -o mriya mriya.c -D_POSIX_C_SOURCE=200809L $(pkg-config --cflags --libs x11) 
 - mod + shift + 1-9 = move window to workspace 1-9
 - mod + ctrl + 1-9 = toggle workspace 1-9 visibility
 - mod + ctrl + shift + 1-9 = toggle workspace 1-9 on window
-- mod + lmb (drag) = move window (non functional in scrolling mode)
-- mod + rmb (drag) = resize window (non functional in scrolling mode)
+- mod + lmb (drag) = move window 
+- mod + rmb (drag) = resize window 
 
 # extra tips/weird things
 
