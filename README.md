@@ -77,9 +77,3 @@ edit `config.h`:
 
 - chose where windows spawn
 - chose if windows spawn maximized
-
-
-# extra tips/weird things
-
-- to focus on a window you need to do mod + click, not just clicking on it. (or just use the arrow keys.)
-- bars dont work (why would you use one anyways)
