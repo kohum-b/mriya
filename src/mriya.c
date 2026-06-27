@@ -377,7 +377,7 @@ static void updatetitle(Client *c) {
 }
 
 static void updatewindowtype(Client *c) {
-    Atom state = getatomprop(c, wmatom[WMState]);
+    Atom state = getatomprop(c, XInternAtom(dpy, "_NET_WM_STATE", False));
     if (state == XInternAtom(dpy, "_NET_WM_STATE_FULLSCREEN", False))
         setfullscreen(c, 1);
 }
@@ -459,7 +459,7 @@ static void setfocus(Client *c) {
 
 static void focus(Client *c) {
     if (!c || !ISVISIBLE(c))
-        for (c = selmon->stack; c && !ISVISIBLE(c); c = c->prev_stack);
+        for (c = selmon->stack; c && !ISVISIBLE(c); c = c->next_stack);
     if (selmon->sel && selmon->sel != c)
         unfocus(selmon->sel, 0);
     if (c) {
@@ -613,7 +613,7 @@ static void restack(Monitor *m) {
     }
     if (m->sel->state == STATE_FLOATING)
         XRaiseWindow(dpy, m->sel->window);
-    for (c = m->stack; c; c = c->prev_stack)
+    for (c = m->stack; c; c = c->next_stack)
         if (c->state == STATE_FLOATING && ISVISIBLE(c))
             XRaiseWindow(dpy, c->window);
     arrange(m);
@@ -624,6 +624,8 @@ static void restack(Monitor *m) {
 static void resize(Client *c, int x, int y, int w, int h, int interact) {
     XWindowChanges wc;
     if (c->state == STATE_FULLSCREEN) return;
+    if (w < 1) w = 1;
+    if (h < 1) h = 1;
     c->x = wc.x = x;
     c->y = wc.y = y;
     c->width = wc.width = w;
@@ -759,7 +761,7 @@ static void focusleft(const char *arg) {
     }
     for (c = selmon->sel->prev; c && !ISVISIBLE(c); c = c->prev);
     if (!c)
-        for (c = selmon->stack; c && !ISVISIBLE(c); c = c->prev_stack);
+        for (c = selmon->stack; c && !ISVISIBLE(c); c = c->next_stack);
     if (c) {
         focus(c);
         ensure_visible(c);
@@ -1038,6 +1040,8 @@ static void sendmon(Client *c, Monitor *m) {
     if (c->prev) c->prev->next = c->next;
     if (c->next) c->next->prev = c->prev;
     if (c == c->monitor->clients) c->monitor->clients = c->next;
+    if (c->next_stack) c->next_stack->prev_stack = c->prev_stack;
+    if (c->prev_stack) c->prev_stack->next_stack = c->next_stack;
     if (c == c->monitor->stack) c->monitor->stack = c->next_stack;
     c->monitor = m;
     c->workspace = m->workspace;
@@ -1279,12 +1283,13 @@ static void configurerequest(XEvent *e) {
     XWindowChanges wc;
     Client *c = wintoclient(ev->window);
     if (c) {
-        if (ev->value_mask & CWBorderWidth) c->border_width = ev->border_width;
+        if (ev->value_mask & CWBorderWidth)
+            c->border_width = ev->border_width > 0 ? ev->border_width : 0;
         if (c->state == STATE_NORMAL || c->state == STATE_FULLSCREEN) {
             if (ev->value_mask & CWX) c->x = ev->x;
             if (ev->value_mask & CWY) c->y = ev->y;
-            if (ev->value_mask & CWWidth) c->width = ev->width;
-            if (ev->value_mask & CWHeight) c->height = ev->height;
+            if (ev->value_mask & CWWidth) c->width = ev->width > 0 ? ev->width : 1;
+            if (ev->value_mask & CWHeight) c->height = ev->height > 0 ? ev->height : 1;
             if ((c->state == STATE_NORMAL || c->state == STATE_FULLSCREEN) && (ev->value_mask & (CWX|CWY)) && !(ev->value_mask & (CWWidth|CWHeight)))
                 configure(c);
             if (ISVISIBLE(c)) XMoveResizeWindow(dpy, c->window, c->x, c->y, c->width, c->height);
@@ -1394,7 +1399,8 @@ static int xerrorstart(Display *dpy, XErrorEvent *ee) {
 
 static int xerror(Display *dpy, XErrorEvent *ee) {
     if (ee->error_code == BadWindow || ee->error_code == BadMatch
-        || ee->error_code == BadDrawable || ee->error_code == BadAccess)
+        || ee->error_code == BadDrawable || ee->error_code == BadAccess
+        || ee->error_code == BadValue || ee->error_code == BadAtom)
         return 0;
     fprintf(stderr, "mriya: fatal error: request code=%d, error code=%d\n",
         ee->request_code, ee->error_code);
