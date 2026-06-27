@@ -60,6 +60,10 @@ cc -o mriya mriya.c -D_POSIX_C_SOURCE=200809L $(pkg-config --cflags --libs x11) 
 - mod + lmb (drag) = move window (non functional in scrolling mode)
 - mod + rmb (drag) = resize window (non functional in scrolling mode)
 
+# extra tips/weird things
+
+- to focus on a window you need to do mod + click, not just clicking on it. (or just use the arrow keys.)
+
 # applications
 
 edit `config.h`:
@@ -70,9 +74,4 @@ edit `config.h`:
 #define BROWSER "firefox"
 #define FILEMANAGER "pcmanfm"
 ```
-
-# what doesnt work
-
-- the window gaps arent even
-- if you switch windows when one is fullscreened the fullscreened window like un-fullscreens idk
 
