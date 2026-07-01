@@ -77,7 +77,6 @@ edit `config.h`:
 #define FILEMANAGER "pcmanfm"
 ```
 
-# to-do 
+# license
 
-- chose where windows spawn
-- chose if windows spawn maximized
+mriya is licensed under the [ISC license](LICENSE)
