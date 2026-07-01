@@ -17,6 +17,11 @@
 
 typedef enum { STATE_NORMAL, STATE_FLOATING, STATE_MAXIMIZED, STATE_FULLSCREEN } ClientState;
 
+#define MAX_CLIENTS 256
+#define MAX_WORKSPACES 10
+#define SCROLL_STEP 300
+#define BORDER_WIDTH 2
+
 typedef struct Client {
     Window window;
     int x, y;
@@ -50,6 +55,7 @@ typedef struct Monitor {
     int workspace;
     struct Monitor *next;
     struct Monitor *prev;
+    Client *lastsel[MAX_WORKSPACES];
 } Monitor;
 
 typedef struct {
@@ -85,10 +91,6 @@ static void monocle(Monitor *m);
 
 #include "config.h"
 
-#define MAX_CLIENTS 256
-#define MAX_WORKSPACES 10
-#define SCROLL_STEP 300
-#define BORDER_WIDTH 2
 #define LENGTH(X) (sizeof X / sizeof X[0])
 #define BUTTONMASK (ButtonPressMask|ButtonReleaseMask)
 #define CLEANMASK(mask) (mask & ~(numlockmask|LockMask) & (ShiftMask|ControlMask|Mod1Mask|Mod2Mask|Mod3Mask|Mod4Mask|Mod5Mask))
@@ -124,9 +126,12 @@ enum {
     NetWMWindowTypeUtility, NetWMWindowTypeNotification,
     NetWMState, NetWMStateFullScreen,
     NetWMStrutPartial, NetWMStrut,
+    NetActiveWindow,
     NetLast
 };
 static Atom netatom[NetLast];
+static Atom net_supporting_wm_check;
+static Window wmcheckwin;
 
 static int (*xerrorxlib)(Display *, XErrorEvent *);
 
@@ -343,6 +348,7 @@ static Monitor *createmon(int num, int x, int y, int w, int h) {
     m->sel = NULL;
     m->next = NULL;
     m->prev = NULL;
+    memset(m->lastsel, 0, sizeof(m->lastsel));
     return m;
 }
 
@@ -506,12 +512,14 @@ static void focus(Client *c) {
         if (c->monitor != selmon) selmon = c->monitor;
         if (c->state == STATE_FLOATING) XRaiseWindow(dpy, c->window);
         selmon->sel = c;
+        selmon->lastsel[selmon->workspace] = c;
         XSetWindowBorder(dpy, c->window, col_sel_border);
         setfocus(c);
         drawbar(selmon);
     } else {
         selmon->sel = NULL;
         XSetInputFocus(dpy, root, RevertToPointerRoot, CurrentTime);
+        XDeleteProperty(dpy, root, XInternAtom(dpy, "_NET_ACTIVE_WINDOW", False));
     }
 }
 
@@ -605,6 +613,7 @@ static void arrange(Monitor *m) {
 #endif
     } else {
         int max_scroll = -(total - m->width);
+        if (max_scroll > 0) max_scroll = 0;
         if (m->scroll_x > 0) m->scroll_x = 0;
         if (m->scroll_x < max_scroll) m->scroll_x = max_scroll;
     }
@@ -743,19 +752,33 @@ static void scrollright(const char *arg) {
 }
 
 static void ws_up(const char *arg) {
+    int prev_ws = selmon->workspace;
     if (selmon->workspace > 0) {
+        selmon->lastsel[prev_ws] = selmon->sel;
         selmon->workspace--;
         selmon->scroll_x = 0;
-        focus(NULL);
+        if (selmon->lastsel[selmon->workspace]) {
+            focus(selmon->lastsel[selmon->workspace]);
+            ensure_visible(selmon->lastsel[selmon->workspace]);
+        } else {
+            focus(NULL);
+        }
         restack(selmon);
     }
 }
 
 static void ws_down(const char *arg) {
+    int prev_ws = selmon->workspace;
     if (selmon->workspace < MAX_WORKSPACES - 1) {
+        selmon->lastsel[prev_ws] = selmon->sel;
         selmon->workspace++;
         selmon->scroll_x = 0;
-        focus(NULL);
+        if (selmon->lastsel[selmon->workspace]) {
+            focus(selmon->lastsel[selmon->workspace]);
+            ensure_visible(selmon->lastsel[selmon->workspace]);
+        } else {
+            focus(NULL);
+        }
         restack(selmon);
     }
 }
@@ -1111,6 +1134,8 @@ static void toggletag(const char *arg) {
 
 static void view(const char *arg) {
     int tag;
+    int prev_ws = selmon->workspace;
+    selmon->lastsel[prev_ws] = selmon->sel;
     if (arg == NULL) {
         selmon->workspace = selmon->workspace ? 0 : 1;
     } else {
@@ -1118,7 +1143,12 @@ static void view(const char *arg) {
         if (tag >= 0 && tag < MAX_WORKSPACES) selmon->workspace = tag;
     }
     selmon->scroll_x = 0;
-    focus(NULL);
+    if (selmon->lastsel[selmon->workspace]) {
+        focus(selmon->lastsel[selmon->workspace]);
+        ensure_visible(selmon->lastsel[selmon->workspace]);
+    } else {
+        focus(NULL);
+    }
     restack(selmon);
 }
 
@@ -1364,6 +1394,7 @@ static void buttonpress(XEvent *e) {
         if (buttons[i].func && buttons[i].button == ev->button
             && CLEANMASK(buttons[i].mod) == CLEANMASK(ev->state))
             buttons[i].func(buttons[i].arg);
+    XAllowEvents(dpy, ReplayPointer, CurrentTime);
 }
 
 static void enternotify(XEvent *e) {
@@ -1544,6 +1575,8 @@ static void initatoms(void) {
     netatom[NetWMStateFullScreen] = XInternAtom(dpy, "_NET_WM_STATE_FULLSCREEN", False);
     netatom[NetWMStrutPartial] = XInternAtom(dpy, "_NET_WM_STRUT_PARTIAL", False);
     netatom[NetWMStrut] = XInternAtom(dpy, "_NET_WM_STRUT", False);
+    netatom[NetActiveWindow] = XInternAtom(dpy, "_NET_ACTIVE_WINDOW", False);
+    net_supporting_wm_check = XInternAtom(dpy, "_NET_SUPPORTING_WM_CHECK", False);
 }
 
 static void initcolors(void) {
@@ -1632,11 +1665,17 @@ static void setup(void) {
         netatom[NetWMWindowTypeUtility], netatom[NetWMWindowTypeNotification],
         netatom[NetWMState], netatom[NetWMStateFullScreen],
         netatom[NetWMStrutPartial], netatom[NetWMStrut],
+        netatom[NetActiveWindow],
     };
     XChangeProperty(dpy, root, XInternAtom(dpy, "_NET_SUPPORTED", False), XA_ATOM, 32,
         PropModeReplace, (unsigned char *)supported, LENGTH(supported));
-    XChangeProperty(dpy, root, XInternAtom(dpy, "_NET_SUPPORTING_WM_CHECK", False), XA_WINDOW, 32,
-        PropModeReplace, (unsigned char *)&root, 1);
+    wmcheckwin = XCreateSimpleWindow(dpy, root, 0, 0, 1, 1, 0, 0, 0);
+    XChangeProperty(dpy, wmcheckwin, net_supporting_wm_check, XA_WINDOW, 32,
+        PropModeReplace, (unsigned char *)&wmcheckwin, 1);
+    XChangeProperty(dpy, wmcheckwin, XInternAtom(dpy, "_NET_WM_NAME", False), XInternAtom(dpy, "UTF8_STRING", False), 8,
+        PropModeReplace, (unsigned char *)"mriyawm", 7);
+    XChangeProperty(dpy, root, net_supporting_wm_check, XA_WINDOW, 32,
+        PropModeReplace, (unsigned char *)&wmcheckwin, 1);
     XDeleteProperty(dpy, root, XInternAtom(dpy, "_NET_CLIENT_LIST", False));
     XDeleteProperty(dpy, root, XInternAtom(dpy, "_NET_CLIENT_LIST_STACKING", False));
     scan();
@@ -1661,6 +1700,7 @@ static void cleanup(void) {
     XFreeCursor(dpy, cursor_normal);
     XFreeCursor(dpy, cursor_move);
     XFreeCursor(dpy, cursor_resize);
+    XDestroyWindow(dpy, wmcheckwin);
     XSetInputFocus(dpy, PointerRoot, RevertToPointerRoot, CurrentTime);
     XCloseDisplay(dpy);
 }
