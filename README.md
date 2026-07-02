@@ -31,6 +31,8 @@ cd mriya/
 chmod +x install.sh
 ./install.sh
 ```
+- if you face any issues with running after compiling, reboot!!!
+
 
 # deps
 
