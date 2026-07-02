@@ -25,7 +25,7 @@ mriya is a scrolling x11 window-manager inspired by niri, i3wm and plan9's rio.
 
 ```bash
 git clone https://github.com/hokum-b/mriya
-cd mriya/src
+cd mriya/
 chmod +x install.sh
 ./install.sh
 ```
